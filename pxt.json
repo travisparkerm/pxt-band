@@ -1,0 +1,29 @@
+{
+    "name": "band",
+    "version": "1.0.0",
+    "description": "Play songs with melody, harmony, bass and drums at the same time (micro:bit V2)",
+    "license": "MIT",
+    "dependencies": {
+        "core": "*"
+    },
+    "files": [
+        "README.md",
+        "band.cpp",
+        "band.ts",
+        "shims.d.ts",
+        "enums.d.ts"
+    ],
+    "testFiles": [
+        "test.ts"
+    ],
+    "targetVersions": {
+        "target": "9.1.1"
+    },
+    "supportedTargets": [
+        "microbit"
+    ],
+    "preferredEditor": "tsprj",
+    "disablesVariants": [
+        "mbdal"
+    ]
+}
