@@ -22,9 +22,9 @@
 #define INST_SAW      2       // brass: buzzy
 #define INST_SINE     3       // whistle: very smooth
 #define INST_PULSE    4       // chip: thin 8-bit lead
-#define INST_PLUCK    5       // guitar: fades after each note
+#define INST_PLUCK    5       // guitar: soft, fades after each note
 #define INST_BELL     6       // bell: smooth and fades slowly
-#define INST_BASS     7       // bass: buzzy and fades a little
+#define INST_BASS     7       // bass: round and fades a little
 #define INST_COUNT    8
 
 // Drum "notes" (in place of a frequency)
@@ -47,12 +47,14 @@ struct Voice {
     int kind;           // 0 silent, 1 tone, 2 kick, 3 snare, 4 hat
     int inst;
     int amp;            // 0..255
+    int32_t attack;     // samples into the note (for a soft start)
 };
 
 static Voice voices[BAND_VOICES];
 static int32_t stepSamples = BAND_RATE * 150 / 1000;
 static uint32_t noise = 0x12345678;
 static int32_t lastNoise = 0;
+static int32_t smooth = 0;      // the whole band goes through a gentle filter to take off the harsh edge
 static int16_t sineTab[64];
 static bool ready = false;
 
@@ -64,10 +66,10 @@ static void init() {
     for (int v = 0; v < BAND_VOICES; v++) {
         memset(&voices[v], 0, sizeof(Voice));
     }
-    voices[0].inst = INST_PULSE;    voices[0].amp = 200;   // melody
-    voices[1].inst = INST_TRIANGLE; voices[1].amp = 130;   // harmony
+    voices[0].inst = INST_TRIANGLE; voices[0].amp = 200;   // melody
+    voices[1].inst = INST_SINE;     voices[1].amp = 110;   // harmony
     voices[2].inst = INST_BASS;     voices[2].amp = 190;   // bass
-    voices[3].inst = INST_SQUARE;   voices[3].amp = 200;   // drums
+    voices[3].inst = INST_SQUARE;   voices[3].amp = 150;   // drums
 }
 
 static uint32_t hz(uint32_t f) {
@@ -90,10 +92,12 @@ static inline int32_t tri(uint32_t phase) {
 static inline int32_t wave(int inst, uint32_t phase) {
     switch (inst) {
         case INST_TRIANGLE:
+        case INST_PLUCK:
             return tri(phase);
         case INST_SAW:
-        case INST_BASS:
             return (int32_t)(phase >> 16) - 32768;
+        case INST_BASS:
+            return tri(phase);
         case INST_SINE:
         case INST_BELL:
             return sineTab[phase >> 26];
@@ -141,6 +145,7 @@ static void startNext(Voice &v) {
         int32_t gap = total / 6;
         if (gap > BAND_RATE / 40) gap = BAND_RATE / 40;
         v.gate = total - gap;
+        v.attack = 0;
     }
 }
 
@@ -170,6 +175,10 @@ void render(int16_t *out, int n) {
                 }
                 if (v.gate < 128) a = (a * v.gate) >> 7;
                 v.gate--;
+                if (v.attack < 128) {
+                    a = (a * v.attack) >> 7;     // about 6 ms fade in: no clicks
+                    v.attack++;
+                }
             } else if (v.kind == 2) {
                 // kick: a low thump that drops in pitch
                 s = tri(v.phase);
@@ -179,7 +188,7 @@ void render(int16_t *out, int n) {
                 v.env -= v.env >> 11;
             } else if (v.kind == 3) {
                 // snare: noise with a little tone
-                s = (nextNoise() * 3 + tri(v.phase)) / 4;
+                s = (nextNoise() + tri(v.phase)) / 2;
                 v.phase += v.inc;
                 a = (a * (int32_t)v.env) >> 16;
                 v.env -= v.env >> 11;
@@ -188,12 +197,15 @@ void render(int16_t *out, int n) {
                 int32_t nz = nextNoise();
                 s = (nz - lastNoise) / 2;
                 lastNoise = nz;
-                a = (a * 2 / 3 * (int32_t)v.env) >> 16;
+                a = (a / 3 * (int32_t)v.env) >> 16;
                 v.env -= v.env >> 9;
             }
             if (v.env < 64) v.kind = 0;
             mix += (s * a) >> 15;
         }
+        // gentle low-pass filter (about 2 kHz): rounds off the buzzy, metallic edges
+        smooth += ((mix - smooth) * 100) >> 8;
+        mix = smooth;
         if (mix > 511) mix = 511;
         if (mix < -511) mix = -511;
         out[i] = (int16_t)mix;
