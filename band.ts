@@ -30,7 +30,7 @@ enum BandInstrument {
     Guitar = 5,
     //% block="bell"
     Bell = 6,
-    //% block="bass guitar"
+    //% block="bass guitar (round)"
     BassGuitar = 7
 }
 
