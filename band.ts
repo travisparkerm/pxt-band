@@ -63,11 +63,20 @@ namespace band {
         }
     }
 
+    // (In the simulator these remember the setting; on the micro:bit the C++ code runs instead.
+    // Each needs at least one line inside, or the simulator looks for a built-in version and crashes.)
+    let simInstrument: number[] = [4, 1, 7, 0]
+    let simVolume: number[] = [80, 50, 75, 80]
+
     //% shim=band::setInstrument
-    function _setInstrument(voice: number, instrument: number): void { }
+    function _setInstrument(voice: number, instrument: number): void {
+        simInstrument[voice] = instrument
+    }
 
     //% shim=band::setPartVolume
-    function _setPartVolume(voice: number, volume: number): void { }
+    function _setPartVolume(voice: number, volume: number): void {
+        simVolume[voice] = volume
+    }
 
     //% shim=band::setStepMs
     function _setStepMs(ms: number): void {
