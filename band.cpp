@@ -62,7 +62,8 @@ static Voice voices[BAND_VOICES];
 static int32_t stepSamples = BAND_RATE * 150 / 1000;
 static uint32_t noise = 0x12345678;
 static int32_t lastNoise = 0;
-static int32_t smooth = 0;      // the whole band goes through a gentle filter to take off the harsh edge
+static int32_t smooth = 0;
+static int32_t gain = BAND_GAIN;   // in quarters: 8 = x2, more = louder (boost)      // the whole band goes through a gentle filter to take off the harsh edge
 static int16_t sineTab[64];
 static bool ready = false;
 
@@ -139,8 +140,8 @@ static void startNext(Voice &v) {
     } else if (f == DRUM_KICK) {
         v.kind = 2;
         v.phase = 0;
-        v.inc = hz(170);
-        v.incMin = hz(45);
+        v.inc = hz(330);       // starts higher than a real kick so the small speaker can play it
+        v.incMin = hz(80);
     } else if (f == DRUM_SNARE) {
         v.kind = 3;
         v.inc = hz(190);
@@ -187,8 +188,11 @@ void render(int16_t *out, int n) {
                     v.attack++;
                 }
             } else if (v.kind == 2) {
-                // kick: a low thump that drops in pitch
-                s = tri(v.phase);
+                // kick: a punchy thump that drops in pitch, with a little click at the start
+                s = tri(v.phase) * 2;
+                if (s > 32767) s = 32767;
+                if (s < -32767) s = -32767;
+                if (v.env > 60000) s = (s + nextNoise()) / 2;
                 v.phase += v.inc;
                 if (v.inc > v.incMin) v.inc -= v.inc >> 10;
                 a = (a * 3 / 2 * (int32_t)v.env) >> 16;
@@ -204,7 +208,7 @@ void render(int16_t *out, int n) {
                 int32_t nz = nextNoise();
                 s = (nz - lastNoise) / 2;
                 lastNoise = nz;
-                a = (a / 3 * (int32_t)v.env) >> 16;
+                a = (a * 2 / 3 * (int32_t)v.env) >> 16;
                 v.env -= v.env >> 10;
             }
             if (v.env < 64) v.kind = 0;
@@ -213,7 +217,7 @@ void render(int16_t *out, int n) {
         // gentle low-pass filter (about 2 kHz): rounds off the buzzy, metallic edges
         smooth += ((mix - smooth) * BAND_FILTER) >> 8;
         // make it louder (the speaker is small), squeezing the loudest bits softly instead of clipping
-        mix = smooth * BAND_GAIN / 4;
+        mix = smooth * gain / 4;
         if (mix > 320) mix = 320 + (mix - 320) / 4;
         if (mix < -320) mix = -320 + (mix + 320) / 4;
         if (mix > 511) mix = 511;
@@ -251,6 +255,14 @@ void setStepMs(int ms) {
 void setInstrument(int k, int inst) {
     if (inst < 0 || inst >= INST_COUNT) inst = INST_SQUARE;
     voices[k].inst = inst;
+}
+
+// Extra loudness: 0 = normal, 1-3 = louder and louder (the loudest parts get squeezed softly)
+void setBoost(int level) {
+    if (level < 0) level = 0;
+    if (level > 3) level = 3;
+    static const int32_t g[4] = {BAND_GAIN, BAND_GAIN * 3 / 2, BAND_GAIN * 2, BAND_GAIN * 3};
+    gain = g[level];
 }
 
 void setAmp(int k, int amp) {
@@ -337,6 +349,12 @@ void setPartVolume(int voice, int volume) {
 }
 
 //%
+void setBoost(int level) {
+    ensure();
+    band_core::setBoost(level);
+}
+
+//%
 void setStepMs(int ms) {
     ensure();
     band_core::setStepMs(ms);
@@ -374,6 +392,8 @@ void setInstrument(int voice, int instrument) {}
 void setPartVolume(int voice, int volume) {}
 //%
 void setStepMs(int ms) {}
+//%
+void setBoost(int level) {}
 //%
 void start() {}
 //%
