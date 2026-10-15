@@ -78,6 +78,13 @@ namespace band {
         simVolume[voice] = volume
     }
 
+    let simBoost = 0
+
+    //% shim=band::setBoost
+    function _setBoost(level: number): void {
+        simBoost = level
+    }
+
     //% shim=band::setStepMs
     function _setStepMs(ms: number): void {
         simStep = ms
@@ -234,6 +241,16 @@ namespace band {
     //% weight=50
     export function setStep(ms: number) {
         _setStepMs(ms)
+    }
+
+    /**
+     * Make the band extra loud: 0 = normal, 1 to 3 = louder and louder.
+     */
+    //% blockId=band_set_boost block="set band boost to $level"
+    //% level.min=0 level.max=3 level.defl=0
+    //% weight=45
+    export function setBoost(level: number) {
+        _setBoost(level)
     }
 
     /**
