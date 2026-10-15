@@ -13,7 +13,15 @@
 #include <math.h>
 
 #define BAND_VOICES 4
-#define BAND_RATE 22050
+// 44100 = the mixer's own rate. (At other rates the mixer reads 16-bit samples from the
+// wrong place, which made the notes sound rusty and buzzy.)
+#define BAND_RATE 44100
+#ifndef BAND_FILTER
+#define BAND_FILTER 90        // low-pass filter strength (bigger = brighter)
+#endif
+#ifndef BAND_GAIN
+#define BAND_GAIN 8           // loudness boost in quarters (8 = x2)
+#endif
 #define BAND_BUF 256          // samples made each time the mixer asks for more
 
 // Instruments
@@ -22,7 +30,7 @@
 #define INST_SAW      2       // brass: buzzy
 #define INST_SINE     3       // whistle: very smooth
 #define INST_PULSE    4       // chip: thin 8-bit lead
-#define INST_PLUCK    5       // guitar: soft, fades after each note
+#define INST_PLUCK    5       // guitar: fades after each note
 #define INST_BELL     6       // bell: smooth and fades slowly
 #define INST_BASS     7       // bass: round and fades a little
 #define INST_COUNT    8
@@ -92,7 +100,6 @@ static inline int32_t tri(uint32_t phase) {
 static inline int32_t wave(int inst, uint32_t phase) {
     switch (inst) {
         case INST_TRIANGLE:
-        case INST_PLUCK:
             return tri(phase);
         case INST_SAW:
             return (int32_t)(phase >> 16) - 32768;
@@ -111,8 +118,8 @@ static inline int32_t wave(int inst, uint32_t phase) {
 // how fast each instrument fades (bigger = slower), 0 = no fade
 static inline int fadeShift(int inst) {
     switch (inst) {
-        case INST_PLUCK: return 13;
-        case INST_BELL: return 14;
+        case INST_PLUCK: return 14;
+        case INST_BELL: return 15;
         case INST_BASS: return 15;
         default: return 0;
     }
@@ -173,39 +180,42 @@ void render(int16_t *out, int n) {
                     v.kind = 0;
                     continue;
                 }
-                if (v.gate < 128) a = (a * v.gate) >> 7;
+                if (v.gate < 256) a = (a * v.gate) >> 8;
                 v.gate--;
-                if (v.attack < 128) {
-                    a = (a * v.attack) >> 7;     // about 6 ms fade in: no clicks
+                if (v.attack < 256) {
+                    a = (a * v.attack) >> 8;     // about 6 ms fade in: no clicks
                     v.attack++;
                 }
             } else if (v.kind == 2) {
                 // kick: a low thump that drops in pitch
                 s = tri(v.phase);
                 v.phase += v.inc;
-                if (v.inc > v.incMin) v.inc -= v.inc >> 9;
+                if (v.inc > v.incMin) v.inc -= v.inc >> 10;
                 a = (a * 3 / 2 * (int32_t)v.env) >> 16;
-                v.env -= v.env >> 11;
+                v.env -= v.env >> 12;
             } else if (v.kind == 3) {
                 // snare: noise with a little tone
                 s = (nextNoise() + tri(v.phase)) / 2;
                 v.phase += v.inc;
                 a = (a * (int32_t)v.env) >> 16;
-                v.env -= v.env >> 11;
+                v.env -= v.env >> 12;
             } else {
                 // hi-hat: short bright noise
                 int32_t nz = nextNoise();
                 s = (nz - lastNoise) / 2;
                 lastNoise = nz;
                 a = (a / 3 * (int32_t)v.env) >> 16;
-                v.env -= v.env >> 9;
+                v.env -= v.env >> 10;
             }
             if (v.env < 64) v.kind = 0;
             mix += (s * a) >> 15;
         }
         // gentle low-pass filter (about 2 kHz): rounds off the buzzy, metallic edges
-        smooth += ((mix - smooth) * 100) >> 8;
-        mix = smooth;
+        smooth += ((mix - smooth) * BAND_FILTER) >> 8;
+        // make it louder (the speaker is small), squeezing the loudest bits softly instead of clipping
+        mix = smooth * BAND_GAIN / 4;
+        if (mix > 320) mix = 320 + (mix - 320) / 4;
+        if (mix < -320) mix = -320 + (mix + 320) / 4;
         if (mix > 511) mix = 511;
         if (mix < -511) mix = -511;
         out[i] = (int16_t)mix;
