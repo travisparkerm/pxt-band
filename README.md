@@ -1,4 +1,4 @@
-# band v1.0.3
+# band v1.0.5
 
 Play songs with **melody, harmony, bass and drums at the same time** on a micro:bit V2.
 
